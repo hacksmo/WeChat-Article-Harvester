@@ -36,7 +36,7 @@ class ExcelExporter:
         ws = wb.active
         ws.title = "文章列表"
         
-        headers = ['序号', '公众号名称', '文章标题', '文章链接', '发布日期', '阅读量', '标签', '是否原创', '下载状态', '备注']
+        headers = ['序号', '公众号名称', '文章标题', '文章链接', '发布日期', '阅读量', '点赞数', '标签', '是否原创', '下载状态', '备注']
         
         header_font = Font(bold=True, color='FFFFFF', size=11)
         header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
@@ -67,16 +67,20 @@ class ExcelExporter:
             if read_count:
                 ws.cell(row=row, column=6, value=read_count)
             
-            tags = article.get('tags', [])
-            ws.cell(row=row, column=7, value=', '.join(tags) if tags else '')
+            like_count = article.get('like_count', 0)
+            if like_count:
+                ws.cell(row=row, column=7, value=like_count)
             
-            ws.cell(row=row, column=8, value='是' if article.get('is_original') else '否')
+            tags = article.get('tags', [])
+            ws.cell(row=row, column=8, value=', '.join(tags) if tags else '')
+            
+            ws.cell(row=row, column=9, value='是' if article.get('is_original') else '否')
             
             downloaded = article.get('downloaded', False)
-            ws.cell(row=row, column=9, value='已下载' if downloaded else '未下载')
+            ws.cell(row=row, column=10, value='已下载' if downloaded else '未下载')
             
             remark = article.get('remark', '')
-            ws.cell(row=row, column=10, value=remark)
+            ws.cell(row=row, column=11, value=remark)
             
             for col in range(1, len(headers) + 1):
                 cell = ws.cell(row=row, column=col)

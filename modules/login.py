@@ -7,6 +7,10 @@ import requests
 import webbrowser
 from datetime import datetime, timedelta
 from pathlib import Path
+from playwright.sync_api import sync_playwright
+from urllib.parse import urlparse, parse_qs
+
+SESSION_FILE = "wechat_session.json"
 
 SESSION_FILE = "wechat_session.json"
 
@@ -90,34 +94,21 @@ class WeChatLogin:
             return False
     
     def login(self) -> bool:
-        print("\n" + "="*50)
-        print("📱 微信登录")
-        print("="*50)
-        
-        if self.load_session():
-            print("[🔄] 正在验证登录状态...")
-            if self.is_logged_in():
-                print(f"[✅] 已登录为: {self.account_name}")
-                
-                # 尝试获取 appmsg_token
-                if not self.appmsg_token:
-                    print("[🔄] 正在获取 appmsg_token...")
-                    self.fetch_appmsg_token()
-                
-                return True
-            else:
-                print("[🔄] 登录已过期，正在重新登录...")
-        
+        # This method is now the entry point for a user-initiated login.
+        # It directly asks for the login method.
         print("\n请选择登录方式：")
-        print("  1) 在浏览器中扫码登录（推荐）")
+        print("  1) 自动浏览器扫码登录 (推荐)")
         print("  2) 手动复制 Cookie 登录")
         
         choice = input("\n请输入选项 (1/2): ").strip()
         
         if choice == '1':
-            return self.browser_login()
-        else:
+            return self.login_with_playwright()
+        elif choice == '2':
             return self.manual_login()
+        else:
+            print("[❌] 无效选项")
+            return False
     
     def fetch_appmsg_token(self) -> bool:
         """从登录后的页面获取 appmsg_token"""
@@ -273,7 +264,57 @@ class WeChatLogin:
         else:
             print("[❌] 登录验证失败，请确保登录成功后再复制 URL 和 Cookie")
             return False
-    
+
+    def login_with_playwright(self) -> bool:
+        print("\n" + "="*50)
+        print("📱 自动浏览器登录 (目前微信限制较严，推荐手动复制Cookie)")
+        print("="*50)
+        
+        # 不要在这里删掉旧 session，万一失败了还能用
+        # self.logout()
+        
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context(no_viewport=True)
+                page = context.new_page()
+                
+                print("[🌐] 正在打开登录页面，请扫码...")
+                page.goto("https://mp.weixin.qq.com/")
+                
+                print("[⏳] 等待扫码登录...")
+                # 等待登录成功并跳转到后台首页
+                page.wait_for_url("https://mp.weixin.qq.com/cgi-bin/home?t=home/index**", timeout=120000)
+                print("[✅] 登录成功!")
+                
+                # 从URL中提取主 token
+                url = page.url
+                self.token = parse_qs(urlparse(url).query).get('token', [None])[0]
+                
+                # 从浏览器上下文中获取完整的 cookie
+                cookies = context.cookies()
+                self.cookie = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
+                
+                # 我们不再强求 appmsg_token，因为它对获取【他人】文章阅读量没用
+                self.appmsg_token = None
+
+                context.close()
+                browser.close()
+
+                if self.token and self.cookie:
+                    self.account_name = self._get_account_name()
+                    self.save_session()
+                    print(f"\n[👤] 账号: {self.account_name}")
+                    return True
+                else:
+                    print("[❌] 自动登录失败：未能获取到凭证。")
+                    return False
+
+        except Exception as e:
+            print(f"[❌] Playwright 登录时出错: {e}")
+            print("[💡] 请选择 手动复制 Cookie 登录")
+            return False
+
     def _get_account_name(self) -> str:
         try:
             url = f"{self.base_url}/cgi-bin/home?t=home/index&lang=zh_CN&token={self.token}"

@@ -85,22 +85,28 @@ class WeChatArticleTool:
         print("📱 微信登录")
         print("=" * 50)
         
-        if self.login.load_session():
-            if self.login.is_logged_in():
-                print(f"\n[✅] 已登录为: {self.login.account_name}")
-                print("[💡] 凭证仍然有效，无需重新登录")
-                
-                choice = input("\n是否重新登录? (y/N): ").strip().lower()
-                if choice != 'y':
-                    return True
+        # 检查是否已有有效登录
+        if self.login.token and self.login.is_logged_in():
+            print(f"\n[✅] 已登录为: {self.login.account_name}")
+            
+            if self.login.appmsg_token:
+                print("[🔑] appmsg_token 已存在，可获取阅读量。")
+            else:
+                print("[⚠️] appmsg_token 不存在，如需获取阅读量，请重新登录。")
+
+            choice = input("\n是否要重新登录 (y/N)? ").strip().lower()
+            if choice != 'y':
+                return True # 用户选择不重新登录
         
+        # 如果未登录，或用户选择重新登录，则执行登录流程
         if self.login.login():
+            # 登录成功后，刷新所有依赖登录状态的模块
             self.fetcher = ArticleFetcher(self.login)
             self.downloader.set_cookie(self.login.cookie)
-            print(f"\n[✅] 登录成功!")
+            print(f"\n[✅] 登录流程成功!")
             return True
         else:
-            print(f"\n[❌] 登录失败")
+            print(f"\n[❌] 登录流程失败")
             return False
     
     def menu_fetch(self):
@@ -229,6 +235,22 @@ class WeChatArticleTool:
         
         input("\n按回车继续...")
     
+    def menu_update_reads(self):
+        print("\n" + "=" * 50)
+        print("📊 更新文章阅读量 [功能限制]")
+        print("=" * 50)
+        print("\n[⚠️] 微信的阅读量 API (`/mp/getappmsgext`) 只能在**微信客户端**")
+        print("    (如手机微信、PC微信浏览器) 内调用。")
+        print("    它需要客户端注入的特定加密参数 (如 `key`, `pass_ticket` 和客户端 `appmsg_token`)。")
+        print("    公众号后台获取的 `appmsg_token` 对此 API 无效。")
+        print("\n[💡] 如果必须获取阅读量，你需要：")
+        print("    1. 使用 Fiddler / Mitmproxy 等抓包工具")
+        print("    2. 在 PC 微信中打开一篇文章，拦截请求获取客户端 Token")
+        print("    3. 将此 Token 喂给爬虫")
+        print("    (这已经超出了本桌面端一键工具的范畴，属于高阶爬虫技术)")
+        print("\n" + "=" * 50)
+        input("\n按回车返回...")
+
     def menu_tags(self):
         accounts = self._get_accounts()
         
@@ -345,12 +367,13 @@ class WeChatArticleTool:
             self.show_status()
             
             print("=" * 50)
-            print("1) 📱 微信登录")
+            print("1) 📱 微信登录 (自动/手动)")
             print("2) 🔍 采集文章列表")
             print("3) 📥 下载文章")
-            print("4) 🏷️ 提取文章标签")
-            print("5) 📤 导出Excel")
-            print("6) 📊 查看状态")
+            print("4) 📊 更新文章阅读量")
+            print("5) 🏷️ 提取文章标签")
+            print("6) 📤 导出Excel")
+            print("7) 📊 查看状态")
             print("0) ❌ 退出")
             print("=" * 50)
             
@@ -363,10 +386,12 @@ class WeChatArticleTool:
             elif choice == '3':
                 self.menu_download()
             elif choice == '4':
-                self.menu_tags()
+                self.menu_update_reads()
             elif choice == '5':
-                self.menu_export()
+                self.menu_tags()
             elif choice == '6':
+                self.menu_export()
+            elif choice == '7':
                 self.menu_status()
             elif choice == '0':
                 print("\n[👋] 再见!")

@@ -3,9 +3,11 @@ import json
 import time
 import re
 import requests
+import random
 from datetime import datetime, timedelta
 from pathlib import Path
 from dateutil import parser as date_parser
+from urllib.parse import urlparse, parse_qs
 
 DATA_DIR = "articles_data"
 
@@ -20,7 +22,9 @@ class ArticleFetcher:
     def get_headers(self) -> dict:
         return {
             'Cookie': self.login.cookie,
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Referer': f'{self.base_url}/cgi-bin/home'
         }
     
@@ -218,16 +222,31 @@ class ArticleFetcher:
             
             aid = article_data.get('aid', '')
             
+            # 从链接中解析出关键参数
+            biz, mid, sn, idx = '', '', '', ''
+            if link:
+                parsed_url = urlparse(link)
+                query_params = parse_qs(parsed_url.query)
+                biz = query_params.get('__biz', [''])[0]
+                mid = query_params.get('mid', [''])[0]
+                sn = query_params.get('sn', [''])[0]
+                idx = query_params.get('idx', [''])[0]
+            
             return {
                 'aid': aid,
                 'title': article_data.get('title', ''),
                 'url': link,
+                'biz': biz,
+                'mid': mid,
+                'sn': sn,
+                'idx': idx,
                 'digest': article_data.get('digest', ''),
                 'author': article_data.get('author', ''),
                 'publish_date': publish_date,
                 'create_time': create_time,
                 'cover': article_data.get('cover', ''),
                 'read_count': 0,
+                'like_count': 0,
                 'is_original': False,
                 'tags': [],
                 'downloaded': False,
@@ -238,25 +257,83 @@ class ArticleFetcher:
             print(f"  [⚠️] 解析文章失败: {e}")
             return None
     
-    def _get_read_count(self, aid: str) -> int:
-        try:
-            url = f"{self.base_url}/cgi-bin/appmsg_comment"
-            params = {
-                'action': 'get_comment_count',
-                'msg_id': aid,
-                'token': self.login.token,
-                'lang': 'zh_CN',
-                'f': 'json',
-                'ajax': '1'
-            }
-            resp = self.session.get(url, params=params, headers=self.get_headers(), timeout=10)
-            data = resp.json()
-            
-            if data.get('base_resp', {}).get('ret') == 0:
-                return data.get('read_count', 0)
-        except:
-            pass
-        return 0
+    def fetch_read_counts(self, articles: list) -> tuple:
+        if not self.login.appmsg_token:
+            print("[❌] 缺少 appmsg_token，无法获取阅读量")
+            return (0, 0, [])
+
+        print("\n" + "="*50)
+        print("📊 开始更新文章阅读量...")
+        print("="*50)
+        
+        updated_count = 0
+        failed_count = 0
+        failed_articles = []
+        
+        total = len(articles)
+        
+        for i, article in enumerate(articles):
+            # 跳过已获取阅读量的
+            if article.get('read_count', 0) > 0 or article.get('like_count', 0) > 0:
+                continue
+
+            print(f"[{i+1}/{total}] 更新: {article.get('title', '')[:30]}...", end=" ", flush=True)
+
+            try:
+                url = f"{self.base_url}/mp/getappmsgext"
+                params = {
+                    'f': 'json',
+                    'appmsg_token': self.login.appmsg_token,
+                    'x5': '0'
+                }
+                data = {
+                    'is_only_read': '1',
+                    'is_temp_url': '0',
+                    'appmsg_type': '9',
+                    '__biz': article.get('biz', ''),
+                    'mid': article.get('mid', ''),
+                    'sn': article.get('sn', ''),
+                    'idx': article.get('idx', ''),
+                    'scene': '126',
+                    'title': article.get('title', ''),
+                    'ct': article.get('create_time', ''),
+                }
+                
+                resp = self.session.post(
+                    url, 
+                    params=params, 
+                    data=data, 
+                    headers=self.get_headers(), 
+                    timeout=15
+                )
+                
+                if resp.status_code == 200:
+                    read_data = resp.json()
+                    if read_data.get('base_resp', {}).get('errmsg') == 'ok':
+                        stats = read_data.get('appmsgstat', {})
+                        article['read_count'] = stats.get('read_num', 0)
+                        article['like_count'] = stats.get('like_num', 0)
+                        print(f"✅ 读: {article['read_count']}, 赞: {article['like_count']}")
+                        updated_count += 1
+                    else:
+                        print(f"❌ API错误: {read_data.get('base_resp', {}).get('errmsg', '未知')}")
+                        failed_count += 1
+                        failed_articles.append(article['title'])
+                else:
+                    print(f"❌ HTTP {resp.status_code}")
+                    failed_count += 1
+                    failed_articles.append(article['title'])
+                
+                # 严格控制频率
+                time.sleep(random.uniform(8, 15))
+
+            except Exception as e:
+                print(f"❌ 请求异常: {e}")
+                failed_count += 1
+                failed_articles.append(article['title'])
+                time.sleep(15)
+
+        return (updated_count, failed_count, failed_articles)
     
     def save_articles(self, account_name: str, articles: list, biz: str = '', fakeid: str = '') -> str:
         data_file = self.data_dir / f"{account_name}_list.json"
