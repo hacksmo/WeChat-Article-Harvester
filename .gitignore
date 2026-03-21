@@ -1,0 +1,43 @@
+# 敏感数据
+wechat_session.json
+articles_data/
+articles/
+output/
+*.xlsx
+qrcode.png
+
+# 虚拟环境
+venv/
+*.venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 日志
+*.log
