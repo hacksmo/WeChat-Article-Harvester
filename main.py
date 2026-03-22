@@ -542,6 +542,7 @@ class WeChatArticleTool:
                 else:
                     data = existing_data
                     print(f"[⏭] 跳过采集，使用已有 {existing_count} 篇文章")
+                account_name = actual_folder
             else:
                 print(f"\n[1/{4 if not do_pdf else 5}] 采集文章列表...")
                 data_file = self.fetcher.fetch_with_filter(account_name, scope, 100)

@@ -104,7 +104,7 @@ class TagExtractor:
         return top_words[:self.max_tags]
     
     def extract_from_markdown(self, md_path: Path) -> List[str]:
-        if not md_path.exists():
+        if not md_path.exists() or not md_path.is_file():
             return []
         
         with open(md_path, 'r', encoding='utf-8') as f:
@@ -153,7 +153,7 @@ class TagExtractor:
             if not folder.is_dir():
                 continue
             for f in folder.iterdir():
-                if f.suffix == '.md' and f.stat().st_size >= 500:
+                if f.is_file() and f.suffix == '.md' and f.stat().st_size >= 500:
                     title_from_file = f.stem
                     existing_folders[normalize(title_from_file)] = f
                     break
@@ -180,7 +180,7 @@ class TagExtractor:
                     if not folder.is_dir():
                         continue
                     if normalize(folder.name).find(norm_title[:20]) >= 0:
-                        md_files = [f for f in folder.iterdir() if f.suffix == '.md' and f.stat().st_size >= 500]
+                        md_files = [f for f in folder.iterdir() if f.is_file() and f.suffix == '.md' and f.stat().st_size >= 500]
                         if md_files:
                             md_file = md_files[0]
                             break
@@ -211,7 +211,7 @@ class TagExtractor:
         return title_to_tags
     
     def extract_tags_single(self, article_dir: Path, title: str = '') -> List[str]:
-        md_files = list(article_dir.glob('*.md'))
+        md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
         
         if md_files:
             return self.extract_from_markdown(md_files[0])

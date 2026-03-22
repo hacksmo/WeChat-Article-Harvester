@@ -86,7 +86,7 @@ class ArticleDownloader:
 
     def _verify_md_content(self, article_dir: Path) -> bool:
         """验证下载的markdown内容是否正常（大于500字节）"""
-        md_files = list(article_dir.glob('*.md'))
+        md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
         if not md_files:
             return False
         return md_files[0].stat().st_size >= 500
@@ -131,7 +131,7 @@ class ArticleDownloader:
             md_content = f"# {title}\n\n" if title else "# 无标题\n\n"
             md_content += text
             
-            md_files = list(article_dir.glob('*.md'))
+            md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
             if md_files:
                 md_file = md_files[0]
             else:
@@ -173,7 +173,7 @@ class ArticleDownloader:
             if result.returncode != 0:
                 return (False, f'm2w exit {result.returncode}: {result.stderr[:100]}')
             
-            md_files = list(article_dir.glob('*.md'))
+            md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
             if not md_files:
                 return (False, 'm2w未生成markdown文件')
             
@@ -463,7 +463,7 @@ class ArticleDownloader:
                 article['remark'] = ''
                 success += 1
                 
-                md_files = list(article_dir.glob('*.md'))
+                md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
                 if md_files:
                     md_file = md_files[0]
                     print(f"[✅] 已保存: {md_file.name} ({md_file.stat().st_size} bytes)")
