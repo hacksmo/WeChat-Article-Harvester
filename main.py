@@ -493,22 +493,31 @@ class WeChatArticleTool:
 
             acc_stats = {'fetched': 0, 'downloaded': 0, 'failed': 0, 'skipped': 0}
 
-            existing_data_file = Path(ROOT_DIR) / account_name / "data.json"
-            if existing_data_file.exists():
+            actual_folder = None
+            existing_data_file = None
+            for folder in Path(ROOT_DIR).iterdir():
+                if folder.is_dir() and folder.name.strip() == account_name.strip():
+                    data_file_path = folder / "data.json"
+                    if data_file_path.exists():
+                        actual_folder = folder.name
+                        existing_data_file = data_file_path
+                        break
+            
+            if actual_folder:
                 with open(existing_data_file, 'r', encoding='utf-8') as f:
                     existing = json.load(f)
                 existing_count = len(existing.get('articles', []))
                 print(f"\n[📁] 已存在 {existing_count} 篇文章")
                 choice = input("    [1] 重新采集  [2] 跳过此账号  → ").strip()
                 if choice == '1':
-                    data_file = self.fetcher.fetch_with_filter(account_name, scope, 100)
+                    data_file = self.fetcher.fetch_with_filter(actual_folder, scope, 100)
                     if not data_file:
                         print(f"[❌] 采集失败，跳过此账号")
                         continue
                     with open(data_file, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                 else:
-                    print(f"[⏭] 跳过账号: {account_name}")
+                    print(f"[⏭] 跳过账号: {actual_folder}")
                     continue
             else:
                 print(f"\n[1/{4 if not do_pdf else 5}] 采集文章列表...")
