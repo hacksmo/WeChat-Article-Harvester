@@ -236,41 +236,41 @@ def process_articles(
     if not articles_dir.exists():
         return stats
 
-    for account_dir in sorted(articles_dir.iterdir()):
-        if not account_dir.is_dir():
+    account_name = articles_dir.parent.name
+
+    for article_dir in sorted(articles_dir.iterdir()):
+        if not article_dir.is_dir():
             continue
 
-        account_name = account_dir.name
+        md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
+        if not md_files:
+            continue
 
-        for article_dir in sorted(account_dir.iterdir()):
-            if not article_dir.is_dir():
-                continue
+        stats['total'] += 1
+        article_name = article_dir.name
 
-            stats['total'] += 1
-            article_name = article_dir.name
+        pdf_name = article_name + '.pdf'
+        pdf_path = output_dir / pdf_name
 
-            pdf_name = article_name + '.pdf'
-            pdf_path = output_dir / pdf_name
+        if pdf_path.exists() and not overwrite:
+            stats['skipped'] += 1
+            continue
 
-            if pdf_path.exists() and not overwrite:
-                stats['skipped'] += 1
-                continue
+        print(f"  [{stats['total']}] {article_name}", end=' ... ')
 
-            print(f"  [{stats['total']}] {account_name}/{article_name}", end=' ... ')
+        success, error = convert_to_pdf(
+            str(article_dir),
+            output_dir,
+            stylesheet,
+            account_name
+        )
 
-            success, error = convert_to_pdf(
-                str(article_dir),
-                output_dir,
-                stylesheet,
-                account_name
-            )
-
-            if success:
-                stats['success'] += 1
-                print("OK")
-            else:
-                stats['failed'] += 1
-                print(f"FAIL ({error})")
+        if success:
+            stats['success'] += 1
+            print("OK")
+        else:
+            stats['failed'] += 1
+            print(f"FAIL ({error})")
 
     return stats
 
@@ -279,14 +279,15 @@ def export_pdf(account_name: str, overwrite: bool = False) -> Dict[str, int]:
     stylesheet = _load_stylesheet()
     actual_name = _resolve_account_name(account_name)
 
-    account_articles = ARTICLES_ROOT / actual_name / "articles"
+    account_dir = ARTICLES_ROOT / actual_name
+    articles_dir = account_dir / "articles"
     account_pdfs = PDF_ROOT / actual_name
     account_pdfs.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n文章目录: {account_articles}")
+    print(f"\n文章目录: {articles_dir}")
     print(f"PDF输出:  {account_pdfs}")
 
-    return process_articles(account_articles, account_pdfs, stylesheet, overwrite)
+    return process_articles(articles_dir, account_pdfs, stylesheet, overwrite)
 
 
 def export_pdf_all(overwrite: bool = False) -> Dict[str, int]:
@@ -312,8 +313,9 @@ def export_pdf_all(overwrite: bool = False) -> Dict[str, int]:
         print(f"正在转换: {account_name}")
         print(f"{'='*50}")
 
-        account_articles = ARTICLES_ROOT / account_name / "articles"
-        account_pdfs = PDF_ROOT / account_name
+        actual_name = _resolve_account_name(account_name)
+        account_articles = ARTICLES_ROOT / actual_name / "articles"
+        account_pdfs = PDF_ROOT / actual_name
         account_pdfs.mkdir(parents=True, exist_ok=True)
 
         stats = process_articles(account_articles, account_pdfs, stylesheet, overwrite)
