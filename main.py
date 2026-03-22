@@ -401,6 +401,131 @@ class WeChatArticleTool:
         
         print()
 
+    def menu_batch(self):
+        if not self.login.token:
+            print("\n[❌] 请先登录")
+            input("\n按回车继续...")
+            return
+
+        print("\n" + "=" * 50)
+        print("🔄 批量处理多账号")
+        print("=" * 50)
+
+        print("\n请输入要处理的公众号名称（支持多种输入方式）:")
+        print("  - 逗号分隔: 账号1,账号2,账号3")
+        print("  - 逐行输入，空行结束")
+        print("  - 输入 0 查看已采集的账号列表\n")
+
+        raw_input = input().strip()
+        if not raw_input:
+            print("[❌] 输入不能为空")
+            return
+
+        if raw_input == '0':
+            accounts = self._get_accounts()
+            if not accounts:
+                print("[📭] 暂无已采集的公众号")
+                return
+            print("已采集的账号:")
+            for i, acc in enumerate(accounts, 1):
+                print(f"  {i}) {acc['name']}")
+            print("\n请重新运行批量处理并输入账号名")
+            return
+
+        account_names = []
+        for line in raw_input.split('\n'):
+            for part in line.split(','):
+                part = part.strip()
+                if part:
+                    account_names.append(part)
+
+        account_names = [n for n in account_names if n]
+        if not account_names:
+            print("[❌] 未识别到有效账号名")
+            return
+
+        print(f"\n[📋] 将处理以下 {len(account_names)} 个账号:")
+        for name in account_names:
+            print(f"     - {name}")
+
+        confirm = input("\n确认开始处理 (y/N)? ").strip().lower()
+        if confirm != 'y':
+            print("[❌] 已取消")
+            return
+
+        print(f"\n{'='*60}")
+        print(f"🚀 开始批量处理 {len(account_names)} 个账号")
+        print(f"    流程: 采集 → 下载 → 标签 → Excel")
+        print(f"{'='*60}\n")
+
+        total_stats = {'accounts': 0, 'fetched': 0, 'downloaded': 0, 'failed': 0, 'skipped': 0}
+
+        for i, account_name in enumerate(account_names, 1):
+            print(f"\n{'='*60}")
+            print(f"[{i}/{len(account_names)}] 处理账号: {account_name}")
+            print(f"{'='*60}")
+
+            acc_stats = {'fetched': 0, 'downloaded': 0, 'failed': 0, 'skipped': 0}
+
+            print(f"\n[1/4] 采集文章列表...")
+            data_file = self.fetcher.fetch_with_filter(account_name, 'all', 100)
+            if not data_file:
+                print(f"[❌] 采集失败，跳过此账号")
+                continue
+
+            with open(data_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            articles = data.get('articles', [])
+            acc_stats['fetched'] = len(articles)
+
+            pending = [a for a in articles if not a.get('downloaded')]
+            if pending:
+                print(f"\n[2/4] 下载文章 ({len(pending)} 篇待下载)...")
+                print(f"      冷却: {self.downloader.min_interval}-{self.downloader.max_interval}秒")
+                try:
+                    result = self.downloader.download_articles(account_name, articles)
+                    self.downloader.update_json_file(account_name, articles)
+                    acc_stats['downloaded'] = result['success']
+                    acc_stats['failed'] = result['failed']
+                    acc_stats['skipped'] = result['skipped']
+                except KeyboardInterrupt:
+                    print(f"[⚠️] 下载被中断")
+            else:
+                print(f"\n[2/4] 下载文章: 无待下载文章")
+
+            print(f"\n[3/4] 提取标签...")
+            title_to_tags = self.tagger.extract_tags_for_account(account_name)
+            tagged_count = sum(1 for a in articles if title_to_tags.get(a.get('title', '')))
+            print(f"      完成 {tagged_count} 篇")
+
+            print(f"\n[4/4] 导出Excel...")
+            self.exporter.export_account(account_name)
+            print(f"      完成")
+
+            print(f"\n{'='*60}")
+            print(f"[📊] {account_name} 摘要:")
+            print(f"     采集: {acc_stats['fetched']} 篇")
+            print(f"     下载成功: {acc_stats['downloaded']} 篇")
+            print(f"     下载失败: {acc_stats['failed']} 篇")
+            print(f"     跳过: {acc_stats['skipped']} 篇")
+            print(f"{'='*60}")
+
+            total_stats['accounts'] += 1
+            total_stats['fetched'] += acc_stats['fetched']
+            total_stats['downloaded'] += acc_stats['downloaded']
+            total_stats['failed'] += acc_stats['failed']
+            total_stats['skipped'] += acc_stats['skipped']
+
+        print(f"\n{'='*60}")
+        print(f"[🎉] 批量处理完成!")
+        print(f"     处理账号: {total_stats['accounts']} 个")
+        print(f"     采集文章: {total_stats['fetched']} 篇")
+        print(f"     下载成功: {total_stats['downloaded']} 篇")
+        print(f"     下载失败: {total_stats['failed']} 篇")
+        print(f"{'='*60}")
+
+        input("\n按回车继续...")
+
     def menu_pdf(self):
         accounts = self._get_accounts()
 
@@ -471,37 +596,37 @@ class WeChatArticleTool:
             self.show_status()
             
             print("=" * 50)
+            print("A) 🔄 批量处理多账号")
             print("1) 📱 微信登录 (自动/手动)")
             print("2) 🔍 采集文章列表")
             print("3) 📥 下载文章")
-            print("4) 📊 更新文章阅读量")
-            print("5) 🏷️ 提取文章标签")
-            print("6) 📤 导出Excel")
-            print("7) 📊 查看状态")
-            print("8) 🗑️ 清理空文件夹")
-            print("9) 📄 导出PDF")
+            print("4) 🏷️ 提取文章标签")
+            print("5) 📤 导出Excel")
+            print("6) 📊 查看状态")
+            print("7) 🗑️ 清理空文件夹")
+            print("8) 📄 导出PDF")
             print("0) ❌ 退出")
             print("=" * 50)
             
             choice = input("\n请输入选项: ").strip()
             
-            if choice == '1':
+            if choice.lower() == 'a':
+                self.menu_batch()
+            elif choice == '1':
                 self.menu_login()
             elif choice == '2':
                 self.menu_fetch()
             elif choice == '3':
                 self.menu_download()
             elif choice == '4':
-                self.menu_update_reads()
-            elif choice == '5':
                 self.menu_tags()
-            elif choice == '6':
+            elif choice == '5':
                 self.menu_export()
-            elif choice == '7':
+            elif choice == '6':
                 self.menu_status()
-            elif choice == '8':
+            elif choice == '7':
                 self.menu_cleanup()
-            elif choice == '9':
+            elif choice == '8':
                 self.menu_pdf()
             elif choice == '0':
                 print("\n[👋] 再见!")
