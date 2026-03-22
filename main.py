@@ -493,21 +493,45 @@ class WeChatArticleTool:
 
             acc_stats = {'fetched': 0, 'downloaded': 0, 'failed': 0, 'skipped': 0}
 
+            def normalize(s):
+                return ''.join(s.split())
+
             actual_folder = None
             existing_data_file = None
+            existing_json_name = None
+
+            norm_input = normalize(account_name)
+
             for folder in Path(ROOT_DIR).iterdir():
-                if folder.is_dir() and folder.name.strip() == account_name.strip():
-                    data_file_path = folder / "data.json"
-                    if data_file_path.exists():
+                if not folder.is_dir():
+                    continue
+                data_file_path = folder / "data.json"
+                if not data_file_path.exists():
+                    continue
+                
+                if normalize(folder.name) == norm_input:
+                    actual_folder = folder.name
+                    existing_data_file = data_file_path
+                    break
+                
+                try:
+                    with open(data_file_path, 'r', encoding='utf-8') as f:
+                        jdata = json.load(f)
+                    stored_name = jdata.get('account_name', '')
+                    if normalize(stored_name) == norm_input:
                         actual_folder = folder.name
                         existing_data_file = data_file_path
+                        existing_json_name = stored_name
                         break
+                except Exception:
+                    continue
             
             if actual_folder:
                 with open(existing_data_file, 'r', encoding='utf-8') as f:
                     existing = json.load(f)
                 existing_count = len(existing.get('articles', []))
-                print(f"\n[📁] 已存在 {existing_count} 篇文章")
+                display_name = existing_json_name or actual_folder
+                print(f"\n[📁] 已存在 {existing_count} 篇文章 ({display_name})")
                 choice = input("    [1] 重新采集  [2] 跳过此账号  → ").strip()
                 if choice == '1':
                     data_file = self.fetcher.fetch_with_filter(actual_folder, scope, 100)
@@ -517,7 +541,7 @@ class WeChatArticleTool:
                     with open(data_file, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                 else:
-                    print(f"[⏭] 跳过账号: {actual_folder}")
+                    print(f"[⏭] 跳过账号: {display_name}")
                     continue
             else:
                 print(f"\n[1/{4 if not do_pdf else 5}] 采集文章列表...")
