@@ -28,6 +28,9 @@ build/
 .AppleDouble
 .LSOverride
 Icon
+.AppleDouble
+.LSOverride
+Icon
 
 # IDE
 .vscode/
