@@ -479,9 +479,6 @@ class WeChatArticleTool:
             print("[❌] 已取消")
             return
 
-        steps = 4 if not do_pdf else 5
-        step_pdf = steps - 1
-
         print(f"\n{'='*60}")
         print(f"🚀 开始批量处理 {len(account_names)} 个账号")
         print(f"    流程: 采集 → 下载 → 标签 → Excel" + (" → PDF" if do_pdf else ""))
@@ -496,20 +493,40 @@ class WeChatArticleTool:
 
             acc_stats = {'fetched': 0, 'downloaded': 0, 'failed': 0, 'skipped': 0}
 
-            print(f"\n[1/{steps}] 采集文章列表...")
-            data_file = self.fetcher.fetch_with_filter(account_name, scope, 100)
-            if not data_file:
-                print(f"[❌] 采集失败，跳过此账号")
-                continue
+            existing_data_file = Path(ROOT_DIR) / account_name / "data.json"
+            if existing_data_file.exists():
+                with open(existing_data_file, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+                existing_count = len(existing.get('articles', []))
+                print(f"\n[📁] 已存在 {existing_count} 篇文章")
+                choice = input("    [1] 重新采集  [2] 跳过此账号  → ").strip()
+                if choice == '1':
+                    data_file = self.fetcher.fetch_with_filter(account_name, scope, 100)
+                    if not data_file:
+                        print(f"[❌] 采集失败，跳过此账号")
+                        continue
+                    with open(data_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                else:
+                    print(f"[⏭] 跳过账号: {account_name}")
+                    continue
+            else:
+                print(f"\n[1/{4 if not do_pdf else 5}] 采集文章列表...")
+                data_file = self.fetcher.fetch_with_filter(account_name, scope, 100)
+                if not data_file:
+                    print(f"[❌] 采集失败，跳过此账号")
+                    continue
+                with open(data_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
 
-            with open(data_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
             articles = data.get('articles', [])
             acc_stats['fetched'] = len(articles)
 
             pending = [a for a in articles if not a.get('downloaded')]
+            total_steps = 4 if not do_pdf else 5
+
             if pending:
-                print(f"\n[2/{steps}] 下载文章 ({len(pending)} 篇待下载)...")
+                print(f"\n[2/{total_steps}] 下载文章 ({len(pending)} 篇待下载)...")
                 print(f"      冷却: {self.downloader.min_interval}-{self.downloader.max_interval}秒")
                 try:
                     result = self.downloader.download_articles(account_name, articles)
@@ -520,19 +537,19 @@ class WeChatArticleTool:
                 except KeyboardInterrupt:
                     print(f"[⚠️] 下载被中断")
             else:
-                print(f"\n[2/{steps}] 下载文章: 无待下载文章")
+                print(f"\n[2/{total_steps}] 下载文章: 无待下载文章")
 
-            print(f"\n[3/{steps}] 提取标签...")
+            print(f"\n[3/{total_steps}] 提取标签...")
             title_to_tags = self.tagger.extract_tags_for_account(account_name)
             tagged_count = sum(1 for a in articles if title_to_tags.get(a.get('title', '')))
             print(f"      完成 {tagged_count} 篇")
 
-            print(f"\n[4/{steps}] 导出Excel...")
+            print(f"\n[4/{total_steps}] 导出Excel...")
             self.exporter.export_account(account_name)
             print(f"      完成")
 
             if do_pdf:
-                print(f"\n[5/{steps}] 导出PDF...")
+                print(f"\n[5/{total_steps}] 导出PDF...")
                 stats = export_pdf(account_name, overwrite=False)
                 print(f"      成功: {stats['success']}, 失败: {stats['failed']}, 跳过: {stats['skipped']}")
 
