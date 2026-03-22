@@ -541,10 +541,10 @@ class WeChatArticleTool:
                         data = json.load(f)
                 else:
                     data = existing_data
-                    print(f"[⏭] 跳过采集，使用已有 {existing_count} 篇文章")
-                account_name = actual_folder
+                print(f"[⏭] 跳过采集，使用已有 {existing_count} 篇文章")
+                actual_folder = None
             else:
-                print(f"\n[1/{4 if not do_pdf else 5}] 采集文章列表...")
+                print(f"\n[1/{5 if not do_pdf else 6}] 采集文章列表...")
                 data_file = self.fetcher.fetch_with_filter(account_name, scope, 100)
                 if not data_file:
                     print(f"[❌] 采集失败，跳过此账号")
@@ -556,7 +556,7 @@ class WeChatArticleTool:
             acc_stats['fetched'] = len(articles)
 
             pending = [a for a in articles if not a.get('downloaded')]
-            total_steps = 4 if not do_pdf else 5
+            total_steps = 5 if not do_pdf else 6
 
             if pending:
                 print(f"\n[2/{total_steps}] 下载文章 ({len(pending)} 篇待下载)...")
@@ -572,17 +572,21 @@ class WeChatArticleTool:
             else:
                 print(f"\n[2/{total_steps}] 下载文章: 无待下载文章")
 
-            print(f"\n[3/{total_steps}] 提取标签...")
+            print(f"\n[3/{total_steps}] 清理空文件夹...")
+            cleanup_result = self.downloader.cleanup_and_export_deleted(account_name)
+            print(f"      删除空目录: {len(cleanup_result.get('deleted_folders', []))} 个")
+
+            print(f"\n[4/{total_steps}] 提取标签...")
             title_to_tags = self.tagger.extract_tags_for_account(account_name)
             tagged_count = sum(1 for a in articles if title_to_tags.get(a.get('title', '')))
             print(f"      完成 {tagged_count} 篇")
 
-            print(f"\n[4/{total_steps}] 导出Excel...")
+            print(f"\n[5/{total_steps}] 导出Excel...")
             self.exporter.export_account(account_name)
             print(f"      完成")
 
             if do_pdf:
-                print(f"\n[5/{total_steps}] 导出PDF...")
+                print(f"\n[6/{total_steps}] 导出PDF...")
                 stats = export_pdf(account_name, overwrite=False)
                 print(f"      成功: {stats['success']}, 失败: {stats['failed']}, 跳过: {stats['skipped']}")
 
