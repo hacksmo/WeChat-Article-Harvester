@@ -145,7 +145,7 @@ class ArticleFetcher:
             print(f"[❌] 搜索失败: {e}")
             return None
     
-    def fetch_article_list(self, fakeid: str, biz: str = '', max_count: int = 1000) -> list:
+    def fetch_article_list(self, fakeid: str, biz: str = '', max_count: int = 1000, cutoff: float = 0) -> list:
         print(f"\n[📋] 开始获取文章列表...")
         
         articles = []
@@ -190,6 +190,7 @@ class ArticleFetcher:
                     print(f"  [📭] 没有更多文章了")
                     break
                 
+                oldest_ts = None
                 for item in publish_list:
                     publish_info = item.get('publish_info', {})
                     if isinstance(publish_info, str):
@@ -199,9 +200,16 @@ class ArticleFetcher:
                     for article_data in appmsgex:
                         article = self._parse_publish_article(article_data)
                         if article:
+                            ts = article.get('create_time', 0)
+                            if oldest_ts is None or ts < oldest_ts:
+                                oldest_ts = ts
                             articles.append(article)
                 
                 print(f"  [✅] 本次获取 {len(publish_list)} 条记录，累计 {len(articles)} 篇")
+                
+                if cutoff > 0 and oldest_ts and oldest_ts < cutoff:
+                    print(f"  [🛑] 已到达截止时间，停止采集")
+                    break
                 
                 offset += count
                 time.sleep(2)
@@ -508,27 +516,25 @@ class ArticleFetcher:
         fakeid = account_info['fakeid']
         biz = account_info.get('biz', '')
         
+        cutoff = 0
+        if scope == 'month':
+            cutoff = (datetime.now() - timedelta(days=30)).timestamp()
+        elif scope == 'quarter':
+            cutoff = (datetime.now() - timedelta(days=90)).timestamp()
+        elif scope == 'half_year':
+            cutoff = (datetime.now() - timedelta(days=180)).timestamp()
+        elif scope == 'year':
+            cutoff = (datetime.now() - timedelta(days=365)).timestamp()
+        
         print(f"\n[🚀] 开始采集文章列表...")
         
         if scope == 'custom':
             articles = self.fetch_article_list(fakeid, biz, max_count=limit)
+            articles = articles[:limit]
+        elif cutoff > 0:
+            articles = self.fetch_article_list(fakeid, biz, max_count=1000, cutoff=cutoff)
         else:
             articles = self.fetch_article_list(fakeid, biz, max_count=1000)
-        
-        if scope == 'custom':
-            articles = articles[:limit]
-        elif scope == 'month':
-            cutoff = datetime.now() - timedelta(days=30)
-            articles = [a for a in articles if a.get('create_time', 0) >= cutoff.timestamp()]
-        elif scope == 'quarter':
-            cutoff = datetime.now() - timedelta(days=90)
-            articles = [a for a in articles if a.get('create_time', 0) >= cutoff.timestamp()]
-        elif scope == 'half_year':
-            cutoff = datetime.now() - timedelta(days=180)
-            articles = [a for a in articles if a.get('create_time', 0) >= cutoff.timestamp()]
-        elif scope == 'year':
-            cutoff = datetime.now() - timedelta(days=365)
-            articles = [a for a in articles if a.get('create_time', 0) >= cutoff.timestamp()]
         
         for i, article in enumerate(articles):
             article['seq'] = i + 1
