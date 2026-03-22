@@ -127,13 +127,16 @@ class TagExtractor:
         return self.extract_from_text(text, title)
     
     def extract_tags_for_account(self, account_name: str) -> dict:
-        account_dir = Path(ROOT_DIR) / account_name / "articles"
+        def normalize(s):
+            return ''.join(s.split())
+
+        account_dir = Path(ROOT_DIR) / account_name
         
         if not account_dir.exists():
-            print(f"[❌] 未找到文章目录: {account_dir}")
+            print(f"[❌] 未找到公众号目录: {account_dir}")
             return {}
         
-        json_file = Path(ROOT_DIR) / account_name / "data.json"
+        json_file = account_dir / "data.json"
         if not json_file.exists():
             print(f"[❌] 未找到JSON文件: {json_file}")
             return {}
@@ -142,25 +145,49 @@ class TagExtractor:
             data = json.load(f)
         
         articles = data.get('articles', [])
+        if not articles:
+            return {}
+        
+        existing_folders = {}
+        for folder in account_dir.iterdir():
+            if not folder.is_dir():
+                continue
+            for f in folder.iterdir():
+                if f.suffix == '.md' and f.stat().st_size >= 500:
+                    title_from_file = f.stem
+                    existing_folders[normalize(title_from_file)] = f
+                    break
         
         title_to_tags = {}
         
         for article in articles:
             title = article.get('title', '')
-            local_path = article.get('local_path', '')
-            
-            if not local_path:
+            if not title:
                 continue
             
-            article_dir = Path(local_path)
-            if not article_dir.exists():
-                article_dir = account_dir / title[:50]
+            norm_title = normalize(title)
             
-            md_files = list(article_dir.glob('*.md'))
+            md_file = existing_folders.get(norm_title)
+            if not md_file:
+                md_file = article.get('local_path')
+                if md_file:
+                    md_file = Path(md_file)
+                    if not md_file.exists():
+                        md_file = None
             
-            if md_files:
+            if not md_file:
+                for folder in account_dir.iterdir():
+                    if not folder.is_dir():
+                        continue
+                    if normalize(folder.name).find(norm_title[:20]) >= 0:
+                        md_files = [f for f in folder.iterdir() if f.suffix == '.md' and f.stat().st_size >= 500]
+                        if md_files:
+                            md_file = md_files[0]
+                            break
+            
+            if md_file:
                 print(f"[🏷️] 提取标签: {title[:30]}...")
-                tags = self.extract_from_markdown(md_files[0])
+                tags = self.extract_from_markdown(md_file)
                 title_to_tags[title] = tags
                 
                 for a in articles:
