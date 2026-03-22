@@ -29,18 +29,10 @@ cd WeChat-Article-Harvester
 ### 2. 创建虚拟环境并安装依赖
 
 ```bash
-# macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 
-# Windows
-# python -m venv venv
-# venv\Scripts\activate
-
-# 安装 Python 依赖
 pip install -r requirements.txt
-
-# 安装 PDF 转换所需的 Chromium 浏览器
 playwright install chromium
 ```
 
@@ -48,20 +40,42 @@ playwright install chromium
 
 从 [wechatmp2markdown releases](https://github.com/fengxxc/wechatmp2markdown/releases) 下载对应平台的可执行文件，将文件名改为 `m2w` 后放入项目根目录。
 
+macOS 用户需要移除安全限制：
+
+```bash
+xattr -cr ./m2w
+```
+
 ### 4. 运行程序
 
 ```bash
 python main.py
 ```
 
-## 使用流程
+## 菜单说明
 
-1. **微信登录** - 选择菜单 1，扫码登录微信公众号后台
-2. **采集文章** - 输入公众号名称，选择下载范围
-3. **下载文章** - 自动调用 m2w 下载 Markdown 和图片
-4. **提取标签** - 自动分析文章内容生成标签
-5. **导出 Excel** - 将数据导出为 Excel 文件
-6. **导出 PDF** - 将 Markdown 文章批量转换为 PDF 文件
+```
+1. 微信扫码登录
+2. 采集公众号文章列表
+3. 批量下载文章
+4. 提取文章标签
+5. 导出 Excel
+6. 查看采集数据
+7. 查看下载失败记录
+8. 清理空文件夹
+9. 导出 PDF
+0. 退出
+```
+
+## 下载机制
+
+文章下载采用三层兜底策略，优先使用本地工具，失败后自动切换：
+
+1. **m2w** - 本地 Chrome 浏览器渲染后抓取（需要 m2w 工具）
+2. **HTTP** - 直接请求文章接口（需要 Cookie）
+3. **webfetch** - 通过 AutoGLM API 渲染获取（需要 AutoGLM 扩展）
+
+下载前会验证内容完整性（Markdown ≥500 字节），内容过少时自动尝试下一层。
 
 ## 目录结构
 
@@ -82,12 +96,12 @@ WeChat-Article-Harvester/
     └── pdf_styles.css   # PDF样式
 ```
 
-> 注意：`WeChatArticles/`（文章数据）、`WeChatPDFs/`（PDF输出）、`venv/`（虚拟环境）已加入 .gitignore，不会被提交到 GitHub。
+> 注意：`WeChatArticles/`（文章数据）、`WeChatPDFs/`（PDF输出）、`.venv/`（虚拟环境）、`old/`（历史文件）已加入 .gitignore，不会被提交到 GitHub。
 
 ## 常见问题
 
 **Q: 运行时报错 "No module named 'xxx'"**
-> 确保已激活虚拟环境（`source venv/bin/activate`），然后重新运行 `pip install -r requirements.txt`
+> 确保已激活虚拟环境（`source .venv/bin/activate`），然后重新运行 `pip install -r requirements.txt`
 
 **Q: PDF 转换失败**
 > 确保已运行 `playwright install chromium`
