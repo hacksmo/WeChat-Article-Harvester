@@ -438,19 +438,17 @@ class ArticleFetcher:
             except Exception:
                 existing_articles = []
         
-        existing_keys = {a.get('content_url', '') or a.get('title', '') for a in existing_articles}
-        
+        existing_keys = {a.get('url', '') or a.get('title', '') for a in existing_articles}
+
         merged = {}
         for a in existing_articles:
-            key = a.get('content_url', '') or a.get('title', '')
+            key = a.get('url', '') or a.get('title', '')
             if key:
                 merged[key] = a
-        
+
         for a in articles:
-            key = a.get('content_url', '') or a.get('title', '')
+            key = a.get('url', '') or a.get('title', '')
             if key and key not in existing_keys:
-                merged[key] = a
-            elif key:
                 merged[key] = a
         
         merged_list = list(merged.values())

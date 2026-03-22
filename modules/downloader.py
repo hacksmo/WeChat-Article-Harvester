@@ -240,19 +240,6 @@ class ArticleDownloader:
                 return (False, 'external', '外部链接/小程序内容')
             
             return (False, 'unknown', '无法解析文章内容')
-            if not content_elem:
-                content_elem = soup.find('div', class_='rich_media_content')
-            
-            if not content_elem:
-                # 检查是否是外链文章
-                if 'mp_profile_iframe' in content or '小程序' in content:
-                    return (False, 'external', '外部链接/小程序内容，无法直接下载')
-                return (False, 'unknown', '无法解析文章内容')
-            
-            if not self._parse_and_save(content, article_dir, title, publish_date):
-                return (False, 'parse_error', '解析保存失败')
-            
-            return (True, 'success', '')
             
         except Exception as e:
             return (False, 'exception', f'请求异常: {str(e)[:50]}')
@@ -434,23 +421,17 @@ class ArticleDownloader:
             if publish_date:
                 folder_name = f"{publish_date}_{folder_name}"
             article_dir = account_dir / folder_name
-            
+
             if result and not self._verify_md_content(article_dir):
-                import shutil
-                if has_cookie:
+                if not self.cookie and self._check_m2w():
                     print(f"[⚠️] m2w内容过少，尝试HTTP...")
                     if article_dir.exists():
                         shutil.rmtree(article_dir)
                     article_dir.mkdir(parents=True, exist_ok=True)
                     result, reason_code, reason_msg = self._download_with_http(url, article_dir, title, publish_date)
-                    if not self._verify_md_content(article_dir):
-                        print(f"[⚠️] HTTP内容也过少，尝试Playwright...")
-                        if article_dir.exists():
-                            shutil.rmtree(article_dir)
-                        article_dir.mkdir(parents=True, exist_ok=True)
-                        result, reason_code, reason_msg = self._download_with_playwright(url, article_dir, title)
-                else:
-                    print(f"[⚠️] m2w内容过少，尝试Playwright...")
+
+                if result and not self._verify_md_content(article_dir):
+                    print(f"[⚠️] 内容过少，尝试Playwright...")
                     if article_dir.exists():
                         shutil.rmtree(article_dir)
                     article_dir.mkdir(parents=True, exist_ok=True)
