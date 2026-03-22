@@ -55,10 +55,13 @@ class WeChatArticleTool:
         
         if self.login.token and self.login.account_name:
             expires = ""
-            if os.path.exists(SESSION_FILE):
-                with open(SESSION_FILE, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    expires = data.get('expires_at', '')[:16]
+            try:
+                if os.path.exists(SESSION_FILE):
+                    with open(SESSION_FILE, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        expires = data.get('expires_at', '')[:16]
+            except Exception:
+                pass
             
             print(f"\n[状态] 微信登录: ✅ 已登录")
             print(f"       账号: {self.login.account_name}")
@@ -85,13 +88,16 @@ class WeChatArticleTool:
                 if subdir.is_dir():
                     data_file = subdir / "data.json"
                     if data_file.exists():
-                        with open(data_file, 'r', encoding='utf-8') as fp:
-                            data = json.load(fp)
+                        try:
+                            with open(data_file, 'r', encoding='utf-8') as fp:
+                                data = json.load(fp)
                             accounts.append({
                                 'name': data.get('account_name', subdir.name),
                                 'count': data.get('total_count', 0),
                                 'file': str(data_file)
                             })
+                        except Exception:
+                            continue
         return accounts
     
     def menu_login(self):

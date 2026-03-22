@@ -161,8 +161,7 @@ class ArticleDownloader:
         if self.cookie:
             return self._download_with_http(url, article_dir, title, publish_date)
         elif self._check_m2w():
-            success, err = self._download_with_m2w(url, article_dir)
-            return (success, 'm2w', err if err else '使用m2w下载成功')
+            return self._download_with_m2w(url, article_dir)
         else:
             return (False, 'no_method', '无可用下载方式')
     
@@ -176,22 +175,22 @@ class ArticleDownloader:
                 timeout=60
             )
             if result.returncode != 0:
-                return (False, f'm2w exit {result.returncode}: {result.stderr[:100]}')
+                return (False, f'm2w exit {result.returncode}', result.stderr[:100])
             
             md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
             if not md_files:
-                return (False, 'm2w未生成markdown文件')
+                return (False, 'm2w_no_file', 'm2w未生成markdown文件')
             
             md_file = md_files[0]
             size = md_file.stat().st_size
             
             if size < 500:
-                return (False, f'markdown内容过少({size}B)，可能被隐藏内容')
+                return (False, 'm2w_content_low', f'markdown内容过少({size}B)，可能被隐藏内容')
             
-            return (True, '')
+            return (True, 'm2w', '')
             
         except Exception as e:
-            return (False, str(e))
+            return (False, 'm2w_exception', str(e))
     
     def _download_with_http(self, url: str, article_dir: Path, title: str = '', publish_date: str = '') -> tuple:
         try:

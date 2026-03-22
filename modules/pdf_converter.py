@@ -19,6 +19,8 @@ def _normalize(s: str) -> str:
 
 
 def _resolve_account_name(account_name: str) -> str:
+    if not ARTICLES_ROOT.exists():
+        return account_name
     for folder in ARTICLES_ROOT.iterdir():
         if folder.is_dir() and (_normalize(folder.name) == _normalize(account_name)):
             return folder.name
