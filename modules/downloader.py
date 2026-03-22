@@ -95,6 +95,7 @@ class ArticleDownloader:
         """通过Playwright渲染页面获取文章内容（第三层兜底）"""
         try:
             from playwright.sync_api import sync_playwright
+            from bs4 import BeautifulSoup
 
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
@@ -102,14 +103,38 @@ class ArticleDownloader:
                 page.goto(url, wait_until='networkidle', timeout=30000)
                 page.wait_for_timeout(3000)
 
-                content = page.content()
+                html = page.content()
                 browser.close()
 
-            if not content:
-                return (False, 'playwright', 'Playwright返回内容为空')
+            soup = BeautifulSoup(html, 'html.parser')
 
-            md_content = f"# {title}\n\n" if title else "# 无标题\n\n"
-            md_content += content
+            for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript', 'iframe']):
+                tag.decompose()
+
+            article = soup.find('div', id='js_content') or soup.find('div', class_='article-content') or soup.find('section', class_='rich_media_content') or soup.find('div', class_='rich_media_content')
+
+            if not article:
+                text = soup.get_text(separator='\n', strip=True)
+                if len(text) < 500:
+                    return (False, 'playwright', '无法提取文章正文')
+            else:
+                for tag in article.find_all(['script', 'style', 'img']):
+                    tag.decompose()
+
+                for a in article.find_all('a'):
+                    a.unwrap()
+
+                text = article.get_text(separator='\n', strip=True)
+
+            if len(text) < 500:
+                return (False, 'playwright', f'提取正文过少({len(text)}B)，可能需登录')
+
+            md_lines = []
+            if title:
+                md_lines.append(f"# {title}\n")
+            md_lines.append(text)
+
+            md_content = '\n'.join(md_lines)
 
             md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
             if md_files:
