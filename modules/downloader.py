@@ -423,19 +423,16 @@ class ArticleDownloader:
             article_dir = account_dir / folder_name
 
             if result and not self._verify_md_content(article_dir):
-                if not self.cookie and self._check_m2w():
-                    print(f"[⚠️] m2w内容过少，尝试HTTP...")
-                    if article_dir.exists():
-                        shutil.rmtree(article_dir)
-                    article_dir.mkdir(parents=True, exist_ok=True)
-                    result, reason_code, reason_msg = self._download_with_http(url, article_dir, title, publish_date)
-
-                if result and not self._verify_md_content(article_dir):
+                if self.cookie and not self._check_m2w():
+                    print(f"[⚠️] HTTP内容过少，尝试Playwright...")
+                elif not self.cookie and self._check_m2w():
+                    print(f"[⚠️] m2w内容过少，尝试Playwright...")
+                else:
                     print(f"[⚠️] 内容过少，尝试Playwright...")
-                    if article_dir.exists():
-                        shutil.rmtree(article_dir)
-                    article_dir.mkdir(parents=True, exist_ok=True)
-                    result, reason_code, reason_msg = self._download_with_playwright(url, article_dir, title)
+                if article_dir.exists():
+                    shutil.rmtree(article_dir)
+                article_dir.mkdir(parents=True, exist_ok=True)
+                result, reason_code, reason_msg = self._download_with_playwright(url, article_dir, title)
             
             if result and not self._verify_md_content(article_dir):
                 result = False
