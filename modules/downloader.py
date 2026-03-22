@@ -11,30 +11,35 @@ from datetime import datetime
 from typing import Optional, Callable
 from bs4 import BeautifulSoup
 
-ARTICLES_DIR = "articles"
-DATA_DIR = "articles_data"
+ROOT_DIR = "WeChatArticles"
 M2W_PATH = "./m2w"
+
+def get_account_dir(account_name: str) -> Path:
+    return Path(ROOT_DIR) / account_name
+
+def get_account_articles_dir(account_name: str) -> Path:
+    return get_account_dir(account_name) / "articles"
+
+def get_account_data_file(account_name: str) -> Path:
+    return get_account_dir(account_name) / "data.json"
+
 
 class ArticleDownloader:
     def __init__(
         self,
         cookie: str = "",
         m2w_path: str = M2W_PATH,
-        articles_dir: str = ARTICLES_DIR,
-        data_dir: str = DATA_DIR,
         min_interval: int = 3,
         max_interval: int = 5
     ):
         self.cookie = cookie
         self.m2w_path = m2w_path
-        self.articles_dir = Path(articles_dir)
-        self.data_dir = Path(data_dir)
+        self.root_dir = Path(ROOT_DIR)
         self.min_interval = min_interval
         self.max_interval = max_interval
         self.session = requests.Session()
         
-        self.articles_dir.mkdir(exist_ok=True)
-        self.data_dir.mkdir(exist_ok=True)
+        self.root_dir.mkdir(parents=True, exist_ok=True)
     
     def set_cookie(self, cookie: str):
         self.cookie = cookie
@@ -295,8 +300,8 @@ class ArticleDownloader:
             print("[❌] 没有可用的下载方式（m2w工具或Cookie）")
             return {'success': 0, 'failed': 0, 'skipped': 0}
         
-        account_dir = self.articles_dir / account_name
-        account_dir.mkdir(exist_ok=True)
+        account_dir = get_account_articles_dir(account_name)
+        account_dir.mkdir(parents=True, exist_ok=True)
         
         filtered_articles = self._filter_articles(articles, scope, limit)
         
@@ -319,7 +324,6 @@ class ArticleDownloader:
                 print(f"[⏭️] 文章 {i+1}/{total}: 已下载，跳过 - {title[:30]}...")
                 skipped += 1
                 continue
-            
             publish_date = article.get('publish_date', '')[:10]
             
             print(f"\n[📥] [{i+1}/{total}] 正在下载: {title[:40]}...")
@@ -376,7 +380,7 @@ class ArticleDownloader:
         return articles
     
     def update_json_file(self, account_name: str, articles: list):
-        json_file = self.data_dir / f"{account_name}_list.json"
+        json_file = get_account_data_file(account_name)
         
         if not json_file.exists():
             print(f"[⚠️] 未找到JSON文件: {json_file}")
@@ -400,7 +404,7 @@ class ArticleDownloader:
         print(f"[💾] JSON文件已更新: {json_file}")
     
     def get_downloaded_status(self, account_name: str) -> dict:
-        json_file = self.data_dir / f"{account_name}_list.json"
+        json_file = get_account_data_file(account_name)
         
         if not json_file.exists():
             return {'total': 0, 'downloaded': 0}
@@ -413,6 +417,69 @@ class ArticleDownloader:
         downloaded = sum(1 for a in articles if a.get('downloaded'))
         
         return {'total': total, 'downloaded': downloaded}
+    
+    def cleanup_empty_folders(self, account_name: str) -> list:
+        """
+        清理公众号下的空文件夹
+        
+        Returns:
+            被删除的空文件夹列表
+        """
+        account_dir = get_account_articles_dir(account_name)
+        if not account_dir.exists():
+            return []
+        
+        deleted_folders = []
+        
+        for item in account_dir.iterdir():
+            if item.is_dir():
+                files = list(item.iterdir())
+                if len(files) == 0:
+                    deleted_folders.append(str(item))
+                    item.rmdir()
+                    print(f"[🗑️] 删除空文件夹: {item.name}")
+        
+        return deleted_folders
+    
+    def cleanup_and_export_deleted(self, account_name: str) -> dict:
+        """
+        清理空文件夹并导出删除的文章信息
+        
+        Returns:
+            {
+                'deleted_folders': list of deleted folder paths,
+                'deleted_articles': list of deleted article info
+            }
+        """
+        deleted_folders = self.cleanup_empty_folders(account_name)
+        
+        json_file = get_account_data_file(account_name)
+        deleted_articles = []
+        
+        if json_file.exists():
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            for article in data.get('articles', []):
+                if article.get('downloaded'):
+                    local_path = article.get('local_path')
+                    if local_path and not Path(local_path).exists():
+                        article['downloaded'] = False
+                        article['remark'] = '文件夹已删除'
+                        deleted_articles.append({
+                            'title': article.get('title', ''),
+                            'url': article.get('url', ''),
+                            'publish_date': article.get('publish_date', ''),
+                            'remark': '文件夹已删除'
+                        })
+            
+            with open(json_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        return {
+            'deleted_folders': deleted_folders,
+            'deleted_articles': deleted_articles
+        }
 
 
 def main():
@@ -422,7 +489,7 @@ def main():
     
     downloader = ArticleDownloader()
     
-    json_file = Path(DATA_DIR) / f"{account_name}_list.json"
+    json_file = get_account_data_file(account_name)
     if not json_file.exists():
         print(f"[❌] 未找到文章列表，请先采集文章")
         return
@@ -433,7 +500,7 @@ def main():
     articles = data.get('articles', [])
     
     print(f"\n[📋] 共 {len(articles)} 篇文章")
-    print(f"[📁] 保存目录: {downloader.articles_dir / account_name}")
+    print(f"[📁] 保存目录: {get_account_articles_dir(account_name)}")
     
     result = downloader.download_articles(account_name, articles)
     

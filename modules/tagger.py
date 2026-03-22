@@ -14,8 +14,7 @@ except ImportError:
     JIEBA_AVAILABLE = False
     print("[⚠️] jieba 未安装，标签提取功能受限")
 
-ARTICLES_DIR = "articles"
-DATA_DIR = "articles_data"
+ROOT_DIR = "WeChatArticles"
 
 STOPWORDS = {
     '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个',
@@ -49,12 +48,8 @@ STOPWORDS = {
 class TagExtractor:
     def __init__(
         self,
-        articles_dir: str = ARTICLES_DIR,
-        data_dir: str = DATA_DIR,
         max_tags: int = 5
     ):
-        self.articles_dir = Path(articles_dir)
-        self.data_dir = Path(data_dir)
         self.max_tags = max_tags
         
         if JIEBA_AVAILABLE:
@@ -132,13 +127,13 @@ class TagExtractor:
         return self.extract_from_text(text, title)
     
     def extract_tags_for_account(self, account_name: str) -> dict:
-        account_dir = self.articles_dir / account_name
+        account_dir = Path(ROOT_DIR) / account_name / "articles"
         
         if not account_dir.exists():
             print(f"[❌] 未找到文章目录: {account_dir}")
             return {}
         
-        json_file = self.data_dir / f"{account_name}_list.json"
+        json_file = Path(ROOT_DIR) / account_name / "data.json"
         if not json_file.exists():
             print(f"[❌] 未找到JSON文件: {json_file}")
             return {}

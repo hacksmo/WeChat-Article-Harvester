@@ -12,10 +12,10 @@ from modules.fetcher import ArticleFetcher
 from modules.downloader import ArticleDownloader
 from modules.tagger import TagExtractor
 from modules.exporter import ExcelExporter
+from modules.pdf_converter import export_pdf, export_pdf_all
 
 SESSION_FILE = "wechat_session.json"
-DATA_DIR = "articles_data"
-ARTICLES_DIR = "articles"
+ROOT_DIR = "WeChatArticles"
 
 
 class WeChatArticleTool:
@@ -68,16 +68,19 @@ class WeChatArticleTool:
     
     def _get_accounts(self):
         accounts = []
-        data_dir = Path(DATA_DIR)
-        if data_dir.exists():
-            for f in data_dir.glob('*_list.json'):
-                with open(f, 'r', encoding='utf-8') as fp:
-                    data = json.load(fp)
-                    accounts.append({
-                        'name': data.get('account_name', f.stem.replace('_list', '')),
-                        'count': data.get('total_count', 0),
-                        'file': str(f)
-                    })
+        root = Path(ROOT_DIR)
+        if root.exists():
+            for subdir in root.iterdir():
+                if subdir.is_dir():
+                    data_file = subdir / "data.json"
+                    if data_file.exists():
+                        with open(data_file, 'r', encoding='utf-8') as fp:
+                            data = json.load(fp)
+                            accounts.append({
+                                'name': data.get('account_name', subdir.name),
+                                'count': data.get('total_count', 0),
+                                'file': str(data_file)
+                            })
         return accounts
     
     def menu_login(self):
@@ -199,7 +202,7 @@ class WeChatArticleTool:
         scope_choice = input("\n请输入选项: ").strip()
         scope = 'unfinished' if scope_choice == '2' else 'all'
         
-        json_file = Path(DATA_DIR) / f"{account_name}_list.json"
+        json_file = Path(ROOT_DIR) / account_name / "data.json"
         with open(json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
@@ -213,7 +216,7 @@ class WeChatArticleTool:
             return
         
         print(f"\n[🚀] 开始下载 {len(articles)} 篇文章...")
-        print(f"     保存目录: {self.downloader.articles_dir / account_name}")
+        print(f"     保存目录: {Path(ROOT_DIR) / account_name / 'articles'}")
         print(f"     冷却时间: {self.downloader.min_interval}-{self.downloader.max_interval}秒")
         print(f"     断点续传: 已启用")
         print("\n[Ctrl+C] 可随时中断，已下载的文章会自动跳过\n")
@@ -344,7 +347,7 @@ class WeChatArticleTool:
             print("\n[📭] 暂无已采集的公众号")
         else:
             for acc in accounts:
-                json_file = Path(DATA_DIR) / f"{acc['name']}_list.json"
+                json_file = Path(ROOT_DIR) / acc['name'] / "data.json"
                 if json_file.exists():
                     with open(json_file, 'r', encoding='utf-8') as f:
                         data = json.load(f)
@@ -362,6 +365,107 @@ class WeChatArticleTool:
         
         print()
     
+    def menu_cleanup(self):
+        accounts = self._get_accounts()
+        
+        print("\n" + "=" * 50)
+        print("🗑️ 清理空文件夹")
+        print("=" * 50)
+        
+        if not accounts:
+            print("\n[📭] 暂无已采集的公众号")
+            return
+        
+        print("\n选择要清理的公众号:")
+        for i, acc in enumerate(accounts, 1):
+            print(f"  {i}) {acc['name']}")
+        print(f"  0) 全部清理")
+        
+        choice = input("\n请选择: ").strip()
+        
+        if choice == '0':
+            for acc in accounts:
+                print(f"\n清理 {acc['name']}...")
+                result = self.downloader.cleanup_and_export_deleted(acc['name'])
+                print(f"  删除空文件夹: {len(result['deleted_folders'])} 个")
+        elif choice:
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(accounts):
+                    acc = accounts[idx]
+                    print(f"\n清理 {acc['name']}...")
+                    result = self.downloader.cleanup_and_export_deleted(acc['name'])
+                    print(f"  删除空文件夹: {len(result['deleted_folders'])} 个")
+            except ValueError:
+                print("[❌] 无效选择")
+        
+        print()
+
+    def menu_pdf(self):
+        accounts = self._get_accounts()
+
+        print("\n" + "=" * 50)
+        print("📄 导出 PDF")
+        print("=" * 50)
+
+        if not accounts:
+            print("\n[📭] 暂无已采集的公众号")
+            input("\n按回车继续...")
+            return
+
+        print("\n请选择导出方式:")
+        print("  1) 导出单个公众号的 PDF")
+        print("  2) 导出所有公众号的 PDF")
+
+        choice = input("\n请输入选项: ").strip()
+
+        if choice == '1':
+            print("\n请选择要导出 PDF 的公众号:")
+            for i, acc in enumerate(accounts, 1):
+                print(f"  {i}) {acc['name']}")
+
+            sub = input("\n请输入选项: ").strip()
+            try:
+                idx = int(sub) - 1
+                if 0 <= idx < len(accounts):
+                    account_name = accounts[idx]['name']
+                else:
+                    raise ValueError()
+            except ValueError:
+                print("[❌] 无效选项")
+                return
+
+            overwrite_q = input("是否覆盖已有 PDF (y/N)? ").strip().lower()
+            overwrite = overwrite_q == 'y'
+
+            print(f"\n[🚀] 开始转换...")
+            stats = export_pdf(account_name, overwrite=overwrite)
+
+            print(f"\n{'='*50}")
+            print(f"[📊] 转换统计:")
+            print(f"     总数: {stats['total']}")
+            print(f"     成功: {stats['success']}")
+            print(f"     失败: {stats['failed']}")
+            print(f"     跳过: {stats['skipped']}")
+
+        elif choice == '2':
+            overwrite_q = input("是否覆盖已有 PDF (y/N)? ").strip().lower()
+            overwrite = overwrite_q == 'y'
+
+            print(f"\n[🚀] 开始批量转换...")
+            stats = export_pdf_all(overwrite=overwrite)
+
+            print(f"\n{'='*50}")
+            print(f"[📊] 全部转换统计:")
+            print(f"     总数: {stats['total']}")
+            print(f"     成功: {stats['success']}")
+            print(f"     失败: {stats['failed']}")
+            print(f"     跳过: {stats['skipped']}")
+        else:
+            print("[❌] 无效选项")
+
+        input("\n按回车继续...")
+
     def run(self):
         while True:
             self.show_status()
@@ -374,6 +478,8 @@ class WeChatArticleTool:
             print("5) 🏷️ 提取文章标签")
             print("6) 📤 导出Excel")
             print("7) 📊 查看状态")
+            print("8) 🗑️ 清理空文件夹")
+            print("9) 📄 导出PDF")
             print("0) ❌ 退出")
             print("=" * 50)
             
@@ -393,6 +499,10 @@ class WeChatArticleTool:
                 self.menu_export()
             elif choice == '7':
                 self.menu_status()
+            elif choice == '8':
+                self.menu_cleanup()
+            elif choice == '9':
+                self.menu_pdf()
             elif choice == '0':
                 print("\n[👋] 再见!")
                 break

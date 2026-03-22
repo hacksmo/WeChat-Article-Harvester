@@ -1,13 +1,15 @@
 # 敏感数据
 wechat_session.json
-articles_data/
-articles/
+WeChatArticles/
+WeChatPDFs/
+old/
 output/
 *.xlsx
 qrcode.png
 
 # 虚拟环境
 venv/
+.venv/
 *.venv/
 env/
 

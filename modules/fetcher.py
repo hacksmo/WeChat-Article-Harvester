@@ -9,15 +9,96 @@ from pathlib import Path
 from dateutil import parser as date_parser
 from urllib.parse import urlparse, parse_qs
 
-DATA_DIR = "articles_data"
+ROOT_DIR = "WeChatArticles"
+
+def get_account_dir(account_name: str) -> Path:
+    """获取公众号根目录"""
+    return Path(ROOT_DIR) / account_name
+
+def get_account_articles_dir(account_name: str) -> Path:
+    """获取公众号文章目录"""
+    return get_account_dir(account_name) / "articles"
+
+def get_account_data_file(account_name: str) -> Path:
+    """获取公众号JSON文件路径"""
+    return get_account_dir(account_name) / "data.json"
+
+
+def check_article_status(url: str, cookie: str = "", timeout: int = 15) -> tuple:
+    """
+    检测文章是否可访问 (使用 GET 请求检查页面内容)
+    
+    Args:
+        url: 文章URL
+        cookie: 微信登录Cookie
+        timeout: 请求超时时间(秒)
+        
+    Returns:
+        (is_available: bool, reason: str)
+        - is_available: True 表示文章可访问, False 表示已删除/不可访问
+        - reason: 状态原因
+    """
+    if not url:
+        return (False, "URL为空")
+    
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        }
+        
+        if cookie:
+            headers['Cookie'] = cookie
+        
+        resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        content = resp.text
+        
+        if resp.status_code == 404:
+            return (False, "404-文章已被删除")
+        
+        if resp.status_code >= 500:
+            return (False, f"{resp.status_code}-服务器错误")
+        
+        content_lower = content.lower()
+        
+        if '网页不存在' in content or 'page not found' in content_lower:
+            return (False, "页面不存在")
+        
+        if 'ghost' in content_lower:
+            return (False, "ghost-文章已失效")
+        
+        if '"errmsg":"dead"' in content:
+            return (False, "dead-文章已失效")
+        
+        if 'mp_profile_iframe' in content and len(content) < 5000:
+            return (False, "外部链接/小程序")
+        
+        if '此内容因违规无法显示' in content or '内容无法显示' in content:
+            return (False, "内容违规被屏蔽")
+        
+        if 'rich_media_content' not in content and '#js_content' not in content:
+            if '链接不存在' in content or '内容已删除' in content or '已失效' in content:
+                return (False, "文章内容已失效")
+            if len(content) < 10000:
+                return (False, "无法获取文章内容")
+        
+        return (True, "")
+        
+    except requests.exceptions.Timeout:
+        return (False, "请求超时")
+    except requests.exceptions.ConnectionError:
+        return (False, "连接失败")
+    except Exception as e:
+        return (False, f"检测异常:{str(e)[:30]}")
 
 class ArticleFetcher:
     def __init__(self, login_module):
         self.login = login_module
         self.base_url = "https://mp.weixin.qq.com"
         self.session = requests.Session()
-        self.data_dir = Path(DATA_DIR)
-        self.data_dir.mkdir(exist_ok=True)
+        self.data_dir = Path(ROOT_DIR)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
     
     def get_headers(self) -> dict:
         return {
@@ -336,7 +417,9 @@ class ArticleFetcher:
         return (updated_count, failed_count, failed_articles)
     
     def save_articles(self, account_name: str, articles: list, biz: str = '', fakeid: str = '') -> str:
-        data_file = self.data_dir / f"{account_name}_list.json"
+        account_dir = get_account_dir(account_name)
+        account_dir.mkdir(parents=True, exist_ok=True)
+        data_file = get_account_data_file(account_name)
         
         data = {
             'account_name': account_name,
@@ -353,8 +436,38 @@ class ArticleFetcher:
         print(f"\n[💾] 文章列表已保存到: {data_file}")
         return str(data_file)
     
+    def save_deleted_articles(self, account_name: str, deleted_articles: list) -> str:
+        """保存已删除的文章列表"""
+        account_dir = get_account_dir(account_name)
+        account_dir.mkdir(parents=True, exist_ok=True)
+        
+        deleted_file = account_dir / "deleted.json"
+        
+        data = {
+            'account_name': account_name,
+            'fetched_at': datetime.now().isoformat(),
+            'deleted_count': len(deleted_articles),
+            'deleted_articles': deleted_articles
+        }
+        
+        with open(deleted_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        print(f"[🗑️] 已删除文章已记录到: {deleted_file}")
+        return str(deleted_file)
+    
+    def load_deleted_articles(self, account_name: str) -> dict:
+        """加载已删除的文章列表"""
+        deleted_file = get_account_dir(account_name) / "deleted.json"
+        
+        if not deleted_file.exists():
+            return None
+        
+        with open(deleted_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    
     def load_articles(self, account_name: str) -> dict:
-        data_file = self.data_dir / f"{account_name}_list.json"
+        data_file = get_account_data_file(account_name)
         
         if not data_file.exists():
             print(f"[❌] 未找到文章列表: {data_file}")
@@ -404,15 +517,20 @@ class ArticleFetcher:
     
     def get_all_accounts(self) -> list:
         accounts = []
-        for f in self.data_dir.glob('*_list.json'):
-            with open(f, 'r', encoding='utf-8') as fp:
-                data = json.load(fp)
-                accounts.append({
-                    'name': data.get('account_name', f.stem.replace('_list', '')),
-                    'count': data.get('total_count', 0),
-                    'fetched_at': data.get('fetched_at', ''),
-                    'file': str(f)
-                })
+        if not self.data_dir.exists():
+            return accounts
+        for subdir in self.data_dir.iterdir():
+            if subdir.is_dir():
+                data_file = subdir / "data.json"
+                if data_file.exists():
+                    with open(data_file, 'r', encoding='utf-8') as fp:
+                        data = json.load(fp)
+                        accounts.append({
+                            'name': data.get('account_name', subdir.name),
+                            'count': data.get('total_count', 0),
+                            'fetched_at': data.get('fetched_at', ''),
+                            'file': str(data_file)
+                        })
         return accounts
 
 
