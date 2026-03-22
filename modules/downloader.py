@@ -105,7 +105,7 @@ class ArticleDownloader:
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     token = resp.read().decode()
             except Exception:
-                return (False, 'webfetch', '无法连接本地webfetch服务')
+                return (False, 'webfetch_unavailable', 'webfetch服务未运行，请开启AutoGLM扩展')
             
             auth = token if token.startswith('Bearer ') else f'Bearer {token}'
             
@@ -478,6 +478,8 @@ class ArticleDownloader:
                     print(f"[❌] 文章被删/违规: {reason_msg}")
                 elif reason_code == 'external':
                     print(f"[⚠️] 外部链接: {reason_msg}")
+                elif reason_code == 'webfetch_unavailable':
+                    print(f"[⚠️] {reason_msg}")
                 else:
                     print(f"[❌] 下载失败: {reason_msg}")
                 failed += 1
