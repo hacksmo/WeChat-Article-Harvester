@@ -91,59 +91,39 @@ class ArticleDownloader:
             return False
         return md_files[0].stat().st_size >= 500
 
-    def _download_with_webfetch(self, url: str, article_dir: Path, title: str = '') -> tuple:
-        """通过webfetch API下载文章内容（第三层兜底）"""
+    def _download_with_playwright(self, url: str, article_dir: Path, title: str = '') -> tuple:
+        """通过Playwright渲染页面获取文章内容（第三层兜底）"""
         try:
-            import urllib.request
-            import urllib.parse
-            
-            api_url = "https://autoglm-api.zhipuai.cn/agentdr/v1/assistant/skills/open-link"
-            
-            token_url = "http://127.0.0.1:53699/get_token"
-            try:
-                req = urllib.request.Request(token_url)
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    token = resp.read().decode()
-            except Exception:
-                return (False, 'webfetch_unavailable', 'webfetch服务未运行，请开启AutoGLM扩展')
-            
-            auth = token if token.startswith('Bearer ') else f'Bearer {token}'
-            
-            post_data = urllib.parse.urlencode({'url': url}).encode()
-            req = urllib.request.Request(
-                api_url,
-                data=post_data,
-                headers={
-                    'Authorization': auth,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                method='POST'
-            )
-            
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                import json
-                data = json.loads(resp.read().decode())
-            
-            text = data.get('data', {}).get('text', '')
-            if not text:
-                return (False, 'webfetch', 'webfetch返回内容为空')
-            
+            from playwright.sync_api import sync_playwright
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.goto(url, wait_until='networkidle', timeout=30000)
+                page.wait_for_timeout(3000)
+
+                content = page.content()
+                browser.close()
+
+            if not content:
+                return (False, 'playwright', 'Playwright返回内容为空')
+
             md_content = f"# {title}\n\n" if title else "# 无标题\n\n"
-            md_content += text
-            
+            md_content += content
+
             md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
             if md_files:
                 md_file = md_files[0]
             else:
                 md_file = article_dir / f"{article_dir.name}.md"
-            
+
             with open(md_file, 'w', encoding='utf-8') as f:
                 f.write(md_content)
-            
-            return (True, 'webfetch', '')
-            
+
+            return (True, 'playwright', '')
+
         except Exception as e:
-            return (False, 'webfetch', f'webfetch异常: {str(e)[:80]}')
+            return (False, 'playwright', f'Playwright异常: {str(e)[:80]}')
     
     def download_single(self, url: str, save_dir: Path, title: str = '', publish_date: str = '') -> tuple:
         folder_name = self._sanitize_filename(title) if title else 'article'
@@ -440,17 +420,17 @@ class ArticleDownloader:
                     article_dir.mkdir(parents=True, exist_ok=True)
                     result, reason_code, reason_msg = self._download_with_http(url, article_dir, title, publish_date)
                     if not self._verify_md_content(article_dir):
-                        print(f"[⚠️] HTTP内容也过少，尝试webfetch...")
+                        print(f"[⚠️] HTTP内容也过少，尝试Playwright...")
                         if article_dir.exists():
                             shutil.rmtree(article_dir)
                         article_dir.mkdir(parents=True, exist_ok=True)
-                        result, reason_code, reason_msg = self._download_with_webfetch(url, article_dir, title)
+                        result, reason_code, reason_msg = self._download_with_playwright(url, article_dir, title)
                 else:
-                    print(f"[⚠️] m2w内容过少，尝试webfetch...")
+                    print(f"[⚠️] m2w内容过少，尝试Playwright...")
                     if article_dir.exists():
                         shutil.rmtree(article_dir)
                     article_dir.mkdir(parents=True, exist_ok=True)
-                    result, reason_code, reason_msg = self._download_with_webfetch(url, article_dir, title)
+                    result, reason_code, reason_msg = self._download_with_playwright(url, article_dir, title)
             
             if result and not self._verify_md_content(article_dir):
                 result = False
