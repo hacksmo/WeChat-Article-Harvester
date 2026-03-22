@@ -460,14 +460,31 @@ class WeChatArticleTool:
         for name in account_names:
             print(f"     - {name}")
 
+        print("\n请选择采集范围:")
+        print("  1) 全量 - 下载所有历史文章")
+        print("  2) 最近一年 - 近12个月")
+        print("  3) 最近半年 - 近6个月")
+        print("  4) 最近三个月 - 近3个月")
+        print("  5) 最近一个月 - 近30天")
+
+        scope_map = {'1': 'all', '2': 'year', '3': 'half_year', '4': 'quarter', '5': 'month'}
+        scope_choice = input("\n请输入选项 (默认1): ").strip() or '1'
+        scope = scope_map.get(scope_choice, 'all')
+
+        pdf_q = input("\n是否导出 PDF (y/N)? ").strip().lower()
+        do_pdf = pdf_q == 'y'
+
         confirm = input("\n确认开始处理 (y/N)? ").strip().lower()
         if confirm != 'y':
             print("[❌] 已取消")
             return
 
+        steps = 4 if not do_pdf else 5
+        step_pdf = steps - 1
+
         print(f"\n{'='*60}")
         print(f"🚀 开始批量处理 {len(account_names)} 个账号")
-        print(f"    流程: 采集 → 下载 → 标签 → Excel")
+        print(f"    流程: 采集 → 下载 → 标签 → Excel" + (" → PDF" if do_pdf else ""))
         print(f"{'='*60}\n")
 
         total_stats = {'accounts': 0, 'fetched': 0, 'downloaded': 0, 'failed': 0, 'skipped': 0}
@@ -479,8 +496,8 @@ class WeChatArticleTool:
 
             acc_stats = {'fetched': 0, 'downloaded': 0, 'failed': 0, 'skipped': 0}
 
-            print(f"\n[1/4] 采集文章列表...")
-            data_file = self.fetcher.fetch_with_filter(account_name, 'all', 100)
+            print(f"\n[1/{steps}] 采集文章列表...")
+            data_file = self.fetcher.fetch_with_filter(account_name, scope, 100)
             if not data_file:
                 print(f"[❌] 采集失败，跳过此账号")
                 continue
@@ -492,7 +509,7 @@ class WeChatArticleTool:
 
             pending = [a for a in articles if not a.get('downloaded')]
             if pending:
-                print(f"\n[2/4] 下载文章 ({len(pending)} 篇待下载)...")
+                print(f"\n[2/{steps}] 下载文章 ({len(pending)} 篇待下载)...")
                 print(f"      冷却: {self.downloader.min_interval}-{self.downloader.max_interval}秒")
                 try:
                     result = self.downloader.download_articles(account_name, articles)
@@ -503,20 +520,25 @@ class WeChatArticleTool:
                 except KeyboardInterrupt:
                     print(f"[⚠️] 下载被中断")
             else:
-                print(f"\n[2/4] 下载文章: 无待下载文章")
+                print(f"\n[2/{steps}] 下载文章: 无待下载文章")
 
-            print(f"\n[3/4] 提取标签...")
+            print(f"\n[3/{steps}] 提取标签...")
             title_to_tags = self.tagger.extract_tags_for_account(account_name)
             tagged_count = sum(1 for a in articles if title_to_tags.get(a.get('title', '')))
             print(f"      完成 {tagged_count} 篇")
 
-            print(f"\n[4/4] 导出Excel...")
+            print(f"\n[4/{steps}] 导出Excel...")
             self.exporter.export_account(account_name)
             print(f"      完成")
 
+            if do_pdf:
+                print(f"\n[5/{steps}] 导出PDF...")
+                stats = export_pdf(account_name, overwrite=False)
+                print(f"      成功: {stats['success']}, 失败: {stats['failed']}, 跳过: {stats['skipped']}")
+
             print(f"\n{'='*60}")
             print(f"[📊] {account_name} 摘要:")
-            print(f"     采集: {acc_stats['fetched']} 篇")
+            print(f"     文章总数: {acc_stats['fetched']} 篇")
             print(f"     下载成功: {acc_stats['downloaded']} 篇")
             print(f"     下载失败: {acc_stats['failed']} 篇")
             print(f"     跳过: {acc_stats['skipped']} 篇")

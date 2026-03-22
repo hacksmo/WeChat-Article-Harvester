@@ -421,19 +421,39 @@ class ArticleFetcher:
         account_dir.mkdir(parents=True, exist_ok=True)
         data_file = get_account_data_file(account_name)
         
+        existing_urls = set()
+        existing_articles = []
+        if data_file.exists():
+            try:
+                with open(data_file, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+                existing_articles = existing_data.get('articles', [])
+                existing_urls = {a.get('content_url', '') for a in existing_articles if a.get('content_url')}
+            except Exception:
+                existing_articles = []
+        
+        merged = {a.get('content_url', ''): a for a in existing_articles}
+        for a in articles:
+            url = a.get('content_url', '')
+            if url and url not in existing_urls:
+                merged[url] = a
+        merged_list = list(merged.values())
+        
         data = {
             'account_name': account_name,
             'biz': biz,
             'fakeid': fakeid,
             'fetched_at': datetime.now().isoformat(),
-            'total_count': len(articles),
-            'articles': articles
+            'total_count': len(merged_list),
+            'articles': merged_list
         }
         
         with open(data_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        print(f"\n[💾] 文章列表已保存到: {data_file}")
+        new_count = len(articles)
+        total_count = len(merged_list)
+        print(f"\n[💾] 文章列表已保存: 本次获取 {new_count} 篇，合并后共 {total_count} 篇")
         return str(data_file)
     
     def save_deleted_articles(self, account_name: str, deleted_articles: list) -> str:
