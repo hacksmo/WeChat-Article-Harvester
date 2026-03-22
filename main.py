@@ -7,6 +7,17 @@ from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+os.environ.setdefault('LC_ALL', 'C.UTF-8')
+if sys.version_info >= (3, 7):
+    try:
+        sys.stdin.reconfigure(encoding='utf-8', errors='replace')
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+sys.path.insert(0, str(Path(__file__).parent))
+
 from modules.login import WeChatLogin
 from modules.fetcher import ArticleFetcher
 from modules.downloader import ArticleDownloader
@@ -417,6 +428,7 @@ class WeChatArticleTool:
         print("  - 输入 0 查看已采集的账号列表\n")
 
         raw_input = input().strip()
+
         if not raw_input:
             print("[❌] 输入不能为空")
             return
