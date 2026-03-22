@@ -3,6 +3,7 @@ import sys
 import json
 import time
 import random
+import shutil
 import subprocess
 import re
 import requests
@@ -431,20 +432,23 @@ class ArticleDownloader:
             article_dir = account_dir / folder_name
             
             if result and not self._verify_md_content(article_dir):
+                import shutil
                 if has_cookie:
                     print(f"[⚠️] m2w内容过少，尝试HTTP...")
-                    import shutil
-                    shutil.rmtree(article_dir)
+                    if article_dir.exists():
+                        shutil.rmtree(article_dir)
                     article_dir.mkdir(parents=True, exist_ok=True)
                     result, reason_code, reason_msg = self._download_with_http(url, article_dir, title, publish_date)
                     if not self._verify_md_content(article_dir):
                         print(f"[⚠️] HTTP内容也过少，尝试webfetch...")
-                        shutil.rmtree(article_dir)
+                        if article_dir.exists():
+                            shutil.rmtree(article_dir)
                         article_dir.mkdir(parents=True, exist_ok=True)
                         result, reason_code, reason_msg = self._download_with_webfetch(url, article_dir, title)
                 else:
                     print(f"[⚠️] m2w内容过少，尝试webfetch...")
-                    shutil.rmtree(article_dir)
+                    if article_dir.exists():
+                        shutil.rmtree(article_dir)
                     article_dir.mkdir(parents=True, exist_ok=True)
                     result, reason_code, reason_msg = self._download_with_webfetch(url, article_dir, title)
             
