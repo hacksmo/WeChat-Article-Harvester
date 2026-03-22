@@ -86,6 +86,8 @@ class ArticleDownloader:
 
     def _verify_md_content(self, article_dir: Path) -> bool:
         """验证下载的markdown内容是否正常（大于500字节）"""
+        if not article_dir.exists():
+            return False
         md_files = [f for f in article_dir.iterdir() if f.is_file() and f.suffix == '.md']
         if not md_files:
             return False
