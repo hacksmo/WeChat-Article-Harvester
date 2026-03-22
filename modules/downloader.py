@@ -410,9 +410,19 @@ class ArticleDownloader:
                 continue
             
             if article.get('downloaded') and article.get('local_path'):
-                print(f"[⏭️] 文章 {i+1}/{total}: 已下载，跳过 - {title[:30]}...")
-                skipped += 1
-                continue
+                local_dir = Path(article['local_path'])
+                md_exists = False
+                if local_dir.exists():
+                    md_exists = any(f.is_file() and f.suffix == '.md' for f in local_dir.iterdir())
+                if md_exists:
+                    print(f"[⏭️] 文章 {i+1}/{total}: 已下载，跳过 - {title[:30]}...")
+                    skipped += 1
+                    continue
+                else:
+                    print(f"[📥] 文件已删除，重新下载 - {title[:30]}...")
+                    article['downloaded'] = False
+                    article['local_path'] = None
+                    article['remark'] = ''
             publish_date = article.get('publish_date', '')[:10]
             
             print(f"\n[📥] [{i+1}/{total}] 正在下载: {title[:40]}...")
