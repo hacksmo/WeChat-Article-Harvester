@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import base64
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -11,6 +12,17 @@ ROOT_DIR = Path(__file__).parent.parent
 ARTICLES_ROOT = ROOT_DIR / "WeChatArticles"
 PDF_ROOT = ROOT_DIR / "WeChatPDFs"
 STATIC_DIR = ROOT_DIR / "static"
+
+
+def _normalize(s: str) -> str:
+    return ''.join(s.split())
+
+
+def _resolve_account_name(account_name: str) -> str:
+    for folder in ARTICLES_ROOT.iterdir():
+        if folder.is_dir() and (_normalize(folder.name) == _normalize(account_name)):
+            return folder.name
+    return account_name
 
 
 def normalize_title(title: str) -> str:
@@ -265,9 +277,10 @@ def process_articles(
 
 def export_pdf(account_name: str, overwrite: bool = False) -> Dict[str, int]:
     stylesheet = _load_stylesheet()
+    actual_name = _resolve_account_name(account_name)
 
-    account_articles = ARTICLES_ROOT / account_name / "articles"
-    account_pdfs = PDF_ROOT / account_name
+    account_articles = ARTICLES_ROOT / actual_name / "articles"
+    account_pdfs = PDF_ROOT / actual_name
     account_pdfs.mkdir(parents=True, exist_ok=True)
 
     print(f"\n文章目录: {account_articles}")
