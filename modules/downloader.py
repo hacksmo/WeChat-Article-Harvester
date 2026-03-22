@@ -24,6 +24,24 @@ def get_account_data_file(account_name: str) -> Path:
     return get_account_dir(account_name) / "data.json"
 
 
+SESSION_FILE = "wechat_session.json"
+
+
+def _load_session_cookie() -> str:
+    """从session文件自动加载cookie"""
+    try:
+        session_file = Path(SESSION_FILE)
+        if session_file.exists():
+            with open(session_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            cookie = data.get('cookie', '')
+            if cookie:
+                return cookie
+    except Exception:
+        pass
+    return ''
+
+
 class ArticleDownloader:
     def __init__(
         self,
@@ -32,6 +50,8 @@ class ArticleDownloader:
         min_interval: int = 3,
         max_interval: int = 5
     ):
+        if not cookie:
+            cookie = _load_session_cookie()
         self.cookie = cookie
         self.m2w_path = m2w_path
         self.root_dir = Path(ROOT_DIR)
@@ -62,6 +82,67 @@ class ArticleDownloader:
         if not os.path.exists(self.m2w_path):
             return False
         return True
+
+    def _verify_md_content(self, article_dir: Path) -> bool:
+        """验证下载的markdown内容是否正常（大于500字节）"""
+        md_files = list(article_dir.glob('*.md'))
+        if not md_files:
+            return False
+        return md_files[0].stat().st_size >= 500
+
+    def _download_with_webfetch(self, url: str, article_dir: Path, title: str = '') -> tuple:
+        """通过webfetch API下载文章内容（第三层兜底）"""
+        try:
+            import urllib.request
+            import urllib.parse
+            
+            api_url = "https://autoglm-api.zhipuai.cn/agentdr/v1/assistant/skills/open-link"
+            
+            token_url = "http://127.0.0.1:53699/get_token"
+            try:
+                req = urllib.request.Request(token_url)
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    token = resp.read().decode()
+            except Exception:
+                return (False, 'webfetch', '无法连接本地webfetch服务')
+            
+            auth = token if token.startswith('Bearer ') else f'Bearer {token}'
+            
+            post_data = urllib.parse.urlencode({'url': url}).encode()
+            req = urllib.request.Request(
+                api_url,
+                data=post_data,
+                headers={
+                    'Authorization': auth,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                method='POST'
+            )
+            
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                import json
+                data = json.loads(resp.read().decode())
+            
+            text = data.get('data', {}).get('text', '')
+            if not text:
+                return (False, 'webfetch', 'webfetch返回内容为空')
+            
+            md_content = f"# {title}\n\n" if title else "# 无标题\n\n"
+            md_content += text
+            
+            md_files = list(article_dir.glob('*.md'))
+            if md_files:
+                md_file = md_files[0]
+            else:
+                md_file = article_dir / f"{article_dir.name}.md"
+            
+            with open(md_file, 'w', encoding='utf-8') as f:
+                f.write(md_content)
+            
+            return (True, 'webfetch', '')
+            
+        except Exception as e:
+            return (False, 'webfetch', f'webfetch异常: {str(e)[:80]}')
     
     def download_single(self, url: str, save_dir: Path, title: str = '', publish_date: str = '') -> tuple:
         folder_name = self._sanitize_filename(title) if title else 'article'
@@ -74,14 +155,12 @@ class ArticleDownloader:
         if self.cookie:
             return self._download_with_http(url, article_dir, title, publish_date)
         elif self._check_m2w():
-            success = self._download_with_m2w(url, article_dir)
-            return (success, 'm2w', '使用m2w下载' if success else 'm2w失败')
+            success, err = self._download_with_m2w(url, article_dir)
+            return (success, 'm2w', err if err else '使用m2w下载成功')
         else:
             return (False, 'no_method', '无可用下载方式')
-            print("[❌] 需要 Cookie 或 m2w 工具才能下载文章")
-            return False
     
-    def _download_with_m2w(self, url: str, article_dir: Path) -> bool:
+    def _download_with_m2w(self, url: str, article_dir: Path) -> tuple:
         try:
             cmd = [self.m2w_path, url, str(article_dir), '--image=save']
             result = subprocess.run(
@@ -90,9 +169,23 @@ class ArticleDownloader:
                 text=True,
                 timeout=60
             )
-            return result.returncode == 0
-        except:
-            return False
+            if result.returncode != 0:
+                return (False, f'm2w exit {result.returncode}: {result.stderr[:100]}')
+            
+            md_files = list(article_dir.glob('*.md'))
+            if not md_files:
+                return (False, 'm2w未生成markdown文件')
+            
+            md_file = md_files[0]
+            size = md_file.stat().st_size
+            
+            if size < 500:
+                return (False, f'markdown内容过少({size}B)，可能被隐藏内容')
+            
+            return (True, '')
+            
+        except Exception as e:
+            return (False, str(e))
     
     def _download_with_http(self, url: str, article_dir: Path, title: str = '', publish_date: str = '') -> tuple:
         try:
@@ -299,6 +392,8 @@ class ArticleDownloader:
         if not self._check_m2w() and not self.cookie:
             print("[❌] 没有可用的下载方式（m2w工具或Cookie）")
             return {'success': 0, 'failed': 0, 'skipped': 0}
+
+        has_cookie = bool(self.cookie)
         
         account_dir = get_account_articles_dir(account_name)
         account_dir.mkdir(parents=True, exist_ok=True)
@@ -327,15 +422,37 @@ class ArticleDownloader:
             publish_date = article.get('publish_date', '')[:10]
             
             print(f"\n[📥] [{i+1}/{total}] 正在下载: {title[:40]}...")
-            
+
             result, reason_code, reason_msg = self.download_single(url, account_dir, title, publish_date)
             
+            folder_name = self._sanitize_filename(title)[:50]
+            if publish_date:
+                folder_name = f"{publish_date}_{folder_name}"
+            article_dir = account_dir / folder_name
+            
+            if result and not self._verify_md_content(article_dir):
+                if has_cookie:
+                    print(f"[⚠️] m2w内容过少，尝试HTTP...")
+                    import shutil
+                    shutil.rmtree(article_dir)
+                    article_dir.mkdir(parents=True, exist_ok=True)
+                    result, reason_code, reason_msg = self._download_with_http(url, article_dir, title, publish_date)
+                    if not self._verify_md_content(article_dir):
+                        print(f"[⚠️] HTTP内容也过少，尝试webfetch...")
+                        shutil.rmtree(article_dir)
+                        article_dir.mkdir(parents=True, exist_ok=True)
+                        result, reason_code, reason_msg = self._download_with_webfetch(url, article_dir, title)
+                else:
+                    print(f"[⚠️] m2w内容过少，尝试webfetch...")
+                    shutil.rmtree(article_dir)
+                    article_dir.mkdir(parents=True, exist_ok=True)
+                    result, reason_code, reason_msg = self._download_with_webfetch(url, article_dir, title)
+            
+            if result and not self._verify_md_content(article_dir):
+                result = False
+                reason_msg = '所有下载方式内容都过少，文章可能被限制'
+            
             if result:
-                folder_name = self._sanitize_filename(title)[:50]
-                if publish_date:
-                    folder_name = f"{publish_date}_{folder_name}"
-                article_dir = account_dir / folder_name
-                
                 article['downloaded'] = True
                 article['local_path'] = str(article_dir)
                 article['downloaded_at'] = datetime.now().isoformat()
@@ -345,7 +462,7 @@ class ArticleDownloader:
                 md_files = list(article_dir.glob('*.md'))
                 if md_files:
                     md_file = md_files[0]
-                    print(f"[✅] 已保存: {md_file.name}")
+                    print(f"[✅] 已保存: {md_file.name} ({md_file.stat().st_size} bytes)")
             else:
                 article['downloaded'] = False
                 article['remark'] = reason_msg
