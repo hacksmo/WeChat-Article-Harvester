@@ -119,18 +119,6 @@ WeChat-Article-Harvester/
 - 下载时会有 3-5 秒冷却机制，防止被封
 - 请勿过于频繁地采集数据
 
-## ☕ 请我喝杯咖啡
-
-如果这个项目帮到了你，欢迎赞赏支持，让更新更有动力：
-
-<p align="center">
-  <img src="docs/assets/donate-card.png" alt="请我喝杯咖啡 - 微信赞赏 / 支付宝转账" width="480">
-</p>
-
-<p align="center">
-  左：微信赞赏码　右：支付宝转账码
-</p>
-
 ## License
 
 MIT License
